@@ -1,0 +1,93 @@
+---
+name: Build
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  conventional-commit:
+    name: Check for conventional commits
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Check commit
+        uses: webiny/action-conventional-commits@v1.0.5
+
+  lint:
+    name: Lint code
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Lint code
+        uses: ./.github/actions/lint
+        with:
+          GO_VERSION: 1.18.x
+
+  tests:
+    name: Tests (Unit and Integration)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Run unit tests
+        uses: ./.github/actions/tests
+        with:
+          GO_VERSION: 1.18.x
+
+  versioning:
+    name: Versioning
+    runs-on: ubuntu-latest
+    needs:
+      - conventional-commit
+      - lint
+      - tests
+    outputs:
+      tag: ${{ steps.changelog.outputs.tag }}
+    if: success() && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Conventional Changelog Action
+        id: changelog
+        uses: TriPSs/conventional-changelog-action@v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          skip-commit: true
+
+      - name: Create Release
+        uses: actions/create-release@v1
+        if: ${{ steps.changelog.outputs.skipped == 'false' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.changelog.outputs.tag }}
+          release_name: ${{ steps.changelog.outputs.tag }}
+          body: ${{ steps.changelog.outputs.clean_changelog }}
+
+  release-cli:
+    name: Release CLI
+    runs-on: ubuntu-latest
+    needs:
+      - versioning
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Docker Build & Push GraphQL server
+        if: ${{needs.versioning.outputs.tag}} != ''
+        uses: ./.github/actions/docker-build-and-push
+        with:
+          DOCKERFILE_PATH: ./build/package/cli.Dockerfile
+          DOCKER_IMAGE: grpc-stub
+          DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
+          DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
+          TAG: ${{ needs.versioning.outputs.tag }}
