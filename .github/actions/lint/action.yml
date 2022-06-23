@@ -1,0 +1,25 @@
+---
+name: Linter
+description: Lint go code
+
+inputs:
+  GO_VERSION:
+    description: "go version to use for running tests"
+    required: true
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+
+    - name: Setup Go
+      uses: actions/setup-go@v3
+      with:
+        go-version: ${{ inputs.GO_VERSION }}
+
+    - name: Run linting
+      uses: golangci/golangci-lint-action@v3
+      with:
+        version: v1.45.2
